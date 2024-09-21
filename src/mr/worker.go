@@ -30,15 +30,15 @@ func Worker(mapf func(string, string) []KeyValue,
 
 	// register yourself
 	id := CallRegister()
-	file := CallGetWork(id)
-	if len(file) > 0 {
-		results := applyMapToFile(file, mapf)
-		fmt.Println(results)
-		CallSignalWorkDone(id)
-	} else {
-		// TODO: if work is empty go and idle and request later
-		fmt.Println("Did not receive work. Sleeping...")
-		time.Sleep(2 * time.Second)
+	for {
+		file := CallGetWork(id)
+		if len(file) > 0 {
+			applyMapToFile(file, mapf)
+			CallSignalWorkDone(id)
+		} else {
+			fmt.Println("Did not receive work. Sleeping...")
+			time.Sleep(4 * time.Second)
+		}
 	}
 
 }
