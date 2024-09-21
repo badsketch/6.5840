@@ -10,6 +10,13 @@ import (
 	"sync"
 )
 
+type CoordinatorState int
+
+const (
+	MAP CoordinatorState = iota
+	REDUCE
+)
+
 type WorkerState int
 
 const (
@@ -23,10 +30,12 @@ type WorkerStatus struct {
 }
 
 type Coordinator struct {
-	FileQueue  []string
-	mu         sync.Mutex
-	WorkerPool map[int]WorkerStatus
-	buckets    int
+	FileQueue   []string
+	mu          sync.Mutex
+	WorkerPool  map[int]WorkerStatus
+	buckets     int
+	State       CoordinatorState
+	StateStream chan struct{}
 }
 
 func (c *Coordinator) RegisterWorker(args *RegisterWorkerArgs, reply *RegisterWorkerReply) error {
@@ -69,8 +78,32 @@ func (c *Coordinator) SignalWorkDone(args *SignalWorkDoneArgs, reply *SignalWork
 		State: IDLE,
 		File:  "",
 	}
+	if c.IsMappingDone() {
+		c.StateStream <- struct{}{}
+	}
 	c.mu.Unlock()
 	return nil
+}
+
+// dangerous. mutex should be handled in caller
+func (c *Coordinator) IsMappingDone() bool {
+	return c.IsTaskQEmpty() && c.IsAllWorkersIdle()
+}
+
+// dangerous. mutex should be handled in caller
+func (c *Coordinator) IsTaskQEmpty() bool {
+	return len(c.FileQueue) == 0
+}
+
+// dangerous. mutex should be handled in caller
+func (c *Coordinator) IsAllWorkersIdle() bool {
+	idle := true
+	for _, status := range c.WorkerPool {
+		if status.State == IN_PROGRESS {
+			idle = false
+		}
+	}
+	return idle
 }
 
 // start a thread that listens for RPCs from worker.go
@@ -102,13 +135,20 @@ func (c *Coordinator) Done() bool {
 // nReduce is the number of reduce tasks to use.
 func MakeCoordinator(files []string, nReduce int) *Coordinator {
 	c := Coordinator{
-		FileQueue:  files,
-		WorkerPool: make(map[int]WorkerStatus),
-		buckets:    nReduce,
+		FileQueue:   files,
+		WorkerPool:  make(map[int]WorkerStatus),
+		buckets:     nReduce,
+		State:       MAP,
+		StateStream: make(chan struct{}),
 	}
-
-	// Your code here.
-
 	c.server()
+
+	// Listen for when we're ready to enter REDUCE phase
+	go func() {
+		<-c.StateStream
+		c.State = REDUCE
+		fmt.Println("MAP Phase completed. Moving to REDUCE")
+	}()
+
 	return &c
 }

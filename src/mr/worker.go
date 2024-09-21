@@ -143,9 +143,9 @@ func partitionKVToBuckets(id int, numBuckets int, kva []KeyValue) {
 		enc := json.NewEncoder(file)
 		// err = enc.Encode(map[string]string{KV.Key: KV.Value})
 		err = enc.Encode(KV)
-		file.Close()
 		if err != nil {
 			panic(fmt.Sprintf("Error when trying to encode to %v: %v", destFile, err))
 		}
+		file.Close()
 	}
 }
