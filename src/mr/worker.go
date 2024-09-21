@@ -8,6 +8,7 @@ import (
 	"log"
 	"net/rpc"
 	"os"
+	"path/filepath"
 	"time"
 )
 
@@ -139,7 +140,10 @@ func partitionKVToBuckets(id int, numBuckets int, kva []KeyValue) {
 	for _, KV := range kva {
 		bucket := ihash(KV.Key) % numBuckets
 		destFile := fmt.Sprintf("mr-%v-%v", id, bucket)
-		file, err := os.OpenFile(destFile, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
+		// TODO: create this at the beginning of the application
+		// currently manually created
+		fullPath := filepath.Join("mr-intermediate", destFile)
+		file, err := os.OpenFile(fullPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
 		if err != nil {
 			panic(fmt.Sprintf("Error when trying to create intermediate files:%v", err))
 		}

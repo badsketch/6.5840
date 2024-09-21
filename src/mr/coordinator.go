@@ -7,6 +7,8 @@ import (
 	"net/http"
 	"net/rpc"
 	"os"
+	"strconv"
+	"strings"
 	"sync"
 )
 
@@ -156,7 +158,41 @@ func MakeCoordinator(files []string, nReduce int) *Coordinator {
 		<-c.StateStream
 		c.State = REDUCE
 		fmt.Println("MAP Phase completed. Moving to REDUCE")
+		c.convertBucketsToReduceTasks()
+		fmt.Printf("REDUCE queue is now %v\n", c.FileQueue)
 	}()
 
 	return &c
+}
+
+// lists all files in directory, but there could be a better way
+// to do this where coordinator collects map worker files
+func (c *Coordinator) convertBucketsToReduceTasks() {
+	// TODO: turn intermediate directory to a variable to be passed around
+	dir := "./mr-intermediate"
+	files, err := os.ReadDir(dir)
+	if err != nil {
+		panic(fmt.Sprintf("Error reading directory: %v\n", err))
+	}
+
+	partitions := [][]string{}
+	// create empty partitions to be appended to later on
+	for i := 0; i < c.buckets; i++ {
+		partitions = append(partitions, []string{})
+	}
+	mrPrefix := "mr-"
+	for _, file := range files {
+		if strings.HasPrefix(file.Name(), mrPrefix) {
+			// mr-1-4
+			parts := strings.Split(file.Name(), "-")
+			partition, err := strconv.Atoi(parts[len(parts)-1])
+			if err != nil {
+				panic(fmt.Sprintf("Error when parsing file %v: %v", file.Name(), err))
+			}
+			partitions[partition] = append(partitions[partition], file.Name())
+		}
+	}
+	c.mu.Lock()
+	c.FileQueue = partitions
+	c.mu.Unlock()
 }
