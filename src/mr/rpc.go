@@ -13,7 +13,8 @@ import (
 
 type RegisterWorkerArgs struct{}
 type RegisterWorkerReply struct {
-	ID int
+	ID          int
+	BucketCount int
 }
 
 type GetWorkArgs struct {

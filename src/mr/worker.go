@@ -1,6 +1,7 @@
 package mr
 
 import (
+	"encoding/json"
 	"fmt"
 	"hash/fnv"
 	"io/ioutil"
@@ -29,11 +30,11 @@ func Worker(mapf func(string, string) []KeyValue,
 	reducef func(string, []string) string) {
 
 	// register yourself
-	id := CallRegister()
+	id, numBuckets := CallRegister()
 	for {
 		file := CallGetWork(id)
 		if len(file) > 0 {
-			applyMapToFile(file, mapf)
+			ProcessTask(file, id, numBuckets, mapf)
 			CallSignalWorkDone(id)
 		} else {
 			fmt.Println("Did not receive work. Sleeping...")
@@ -43,13 +44,13 @@ func Worker(mapf func(string, string) []KeyValue,
 
 }
 
-func CallRegister() int {
+func CallRegister() (int, int) {
 	args := RegisterWorkerArgs{}
 	reply := RegisterWorkerReply{}
 	ok := call("Coordinator.RegisterWorker", &args, &reply)
 	if ok {
 		fmt.Printf("Joined as Worker #%v\n", reply.ID)
-		return reply.ID
+		return reply.ID, reply.BucketCount
 	} else {
 		panic("Error when worker attempting to register!")
 	}
@@ -108,6 +109,11 @@ func call(rpcname string, args interface{}, reply interface{}) bool {
 	return false
 }
 
+func ProcessTask(file string, id int, numBuckets int, mapf func(string, string) []KeyValue) {
+	kva := applyMapToFile(file, mapf)
+	partitionKVToBuckets(id, numBuckets, kva)
+}
+
 func applyMapToFile(filename string, mapf func(string, string) []KeyValue) []KeyValue {
 	file, err := os.Open(filename)
 	if err != nil {
@@ -120,4 +126,26 @@ func applyMapToFile(filename string, mapf func(string, string) []KeyValue) []Key
 	file.Close()
 	kva := mapf(filename, string(content))
 	return kva
+}
+
+// TODO: maybe pass pointer to kv for efficiency
+// probably very inefficient with all the file opening and closing. Also consider sorting
+// KV format may need to be changed since it has KEY VALUE literal strings in the result,
+// but this could work as long as reducing expects this
+func partitionKVToBuckets(id int, numBuckets int, kva []KeyValue) {
+	for _, KV := range kva {
+		bucket := ihash(KV.Key) % numBuckets
+		destFile := fmt.Sprintf("mr-%v-%v", id, bucket)
+		file, err := os.OpenFile(destFile, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
+		if err != nil {
+			panic(fmt.Sprintf("Error when trying to create intermediate files:%v", err))
+		}
+		enc := json.NewEncoder(file)
+		// err = enc.Encode(map[string]string{KV.Key: KV.Value})
+		err = enc.Encode(KV)
+		file.Close()
+		if err != nil {
+			panic(fmt.Sprintf("Error when trying to encode to %v: %v", destFile, err))
+		}
+	}
 }

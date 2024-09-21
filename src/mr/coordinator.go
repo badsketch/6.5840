@@ -26,6 +26,7 @@ type Coordinator struct {
 	FileQueue  []string
 	mu         sync.Mutex
 	WorkerPool map[int]WorkerStatus
+	buckets    int
 }
 
 func (c *Coordinator) RegisterWorker(args *RegisterWorkerArgs, reply *RegisterWorkerReply) error {
@@ -33,6 +34,7 @@ func (c *Coordinator) RegisterWorker(args *RegisterWorkerArgs, reply *RegisterWo
 	id := len(c.WorkerPool) + 1
 	c.mu.Unlock()
 	reply.ID = id
+	reply.BucketCount = c.buckets
 	fmt.Printf("A worker has joined. Given ID %v\n", id)
 	return nil
 }
@@ -102,6 +104,7 @@ func MakeCoordinator(files []string, nReduce int) *Coordinator {
 	c := Coordinator{
 		FileQueue:  files,
 		WorkerPool: make(map[int]WorkerStatus),
+		buckets:    nReduce,
 	}
 
 	// Your code here.
