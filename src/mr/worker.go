@@ -34,7 +34,7 @@ func Worker(mapf func(string, string) []KeyValue,
 	for {
 		file := CallGetWork(id)
 		if len(file) > 0 {
-			ProcessTask(file, id, numBuckets, mapf)
+			ProcessMapTask(file, id, numBuckets, mapf)
 			CallSignalWorkDone(id)
 		} else {
 			fmt.Println("Did not receive work. Sleeping...")
@@ -56,7 +56,7 @@ func CallRegister() (int, int) {
 	}
 }
 
-func CallGetWork(id int) string {
+func CallGetWork(id int) []string {
 	// request work
 	args := GetWorkArgs{
 		ID: id,
@@ -64,12 +64,12 @@ func CallGetWork(id int) string {
 	reply := GetWorkReply{}
 	ok := call("Coordinator.GetWork", &args, &reply)
 	if ok {
-		if len(reply.File) > 0 {
-			fmt.Printf("Worker %v is now processing %v\n", id, reply.File)
+		if len(reply.Files) > 0 {
+			fmt.Printf("Worker %v is now processing %v\n", id, reply.Files)
 		} else {
 			fmt.Printf("Worker %v did not receive any work.\n", id)
 		}
-		return reply.File
+		return reply.Files
 	} else {
 		panic("Error when worker attempting to request work!")
 	}
@@ -109,22 +109,25 @@ func call(rpcname string, args interface{}, reply interface{}) bool {
 	return false
 }
 
-func ProcessTask(file string, id int, numBuckets int, mapf func(string, string) []KeyValue) {
-	kva := applyMapToFile(file, mapf)
+func ProcessMapTask(files []string, id int, numBuckets int, mapf func(string, string) []KeyValue) {
+	kva := applyMapToFiles(files, mapf)
 	partitionKVToBuckets(id, numBuckets, kva)
 }
 
-func applyMapToFile(filename string, mapf func(string, string) []KeyValue) []KeyValue {
-	file, err := os.Open(filename)
-	if err != nil {
-		log.Fatalf("Cannot open %v", filename)
+func applyMapToFiles(filenames []string, mapf func(string, string) []KeyValue) []KeyValue {
+	kva := []KeyValue{}
+	for _, filename := range filenames {
+		file, err := os.Open(filename)
+		if err != nil {
+			log.Fatalf("Cannot open %v", filename)
+		}
+		content, err := ioutil.ReadAll(file)
+		if err != nil {
+			log.Fatalf("cannot read %v", filename)
+		}
+		file.Close()
+		kva = append(kva, mapf(filename, string(content))...)
 	}
-	content, err := ioutil.ReadAll(file)
-	if err != nil {
-		log.Fatalf("cannot read %v", filename)
-	}
-	file.Close()
-	kva := mapf(filename, string(content))
 	return kva
 }
 

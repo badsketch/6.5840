@@ -21,7 +21,7 @@ type GetWorkArgs struct {
 	ID int
 }
 type GetWorkReply struct {
-	File string
+	Files []string
 }
 
 type SignalWorkDoneArgs struct {

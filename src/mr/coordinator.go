@@ -26,11 +26,11 @@ const (
 
 type WorkerStatus struct {
 	State WorkerState
-	File  string
+	Files []string
 }
 
 type Coordinator struct {
-	FileQueue   []string
+	FileQueue   [][]string
 	mu          sync.Mutex
 	WorkerPool  map[int]WorkerStatus
 	buckets     int
@@ -52,21 +52,21 @@ func (c *Coordinator) GetWork(args *GetWorkArgs, reply *GetWorkReply) error {
 	c.mu.Lock()
 	// pop from front of queue if there's tasks
 	if len(c.FileQueue) > 0 {
-		file := c.FileQueue[0]
+		files := c.FileQueue[0]
 		c.FileQueue = c.FileQueue[1:]
 		// update worker states
 		c.WorkerPool[args.ID] = WorkerStatus{
 			State: IN_PROGRESS,
-			File:  file,
+			Files: files,
 		}
-		reply.File = file
+		reply.Files = files
 		// otherwise return nothing in reply
 	} else {
 		c.WorkerPool[args.ID] = WorkerStatus{
 			State: IDLE,
-			File:  "",
+			Files: []string{},
 		}
-		reply.File = ""
+		reply.Files = []string{}
 	}
 	c.mu.Unlock()
 	return nil
@@ -76,7 +76,7 @@ func (c *Coordinator) SignalWorkDone(args *SignalWorkDoneArgs, reply *SignalWork
 	c.mu.Lock()
 	c.WorkerPool[args.ID] = WorkerStatus{
 		State: IDLE,
-		File:  "",
+		Files: []string{},
 	}
 	if c.IsMappingDone() {
 		c.StateStream <- struct{}{}
@@ -134,8 +134,16 @@ func (c *Coordinator) Done() bool {
 // main/mrcoordinator.go calls this function.
 // nReduce is the number of reduce tasks to use.
 func MakeCoordinator(files []string, nReduce int) *Coordinator {
+
+	// awkward, but this allows map and reduce to use the same WorkerStatus
+	// field for files. Though map is simple a list of a single file
+	filesList := [][]string{}
+	for _, f := range files {
+		filesList = append(filesList, []string{f})
+	}
+
 	c := Coordinator{
-		FileQueue:   files,
+		FileQueue:   filesList,
 		WorkerPool:  make(map[int]WorkerStatus),
 		buckets:     nReduce,
 		State:       MAP,
