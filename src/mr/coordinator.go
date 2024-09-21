@@ -51,7 +51,21 @@ func (c *Coordinator) GetWork(args *GetWorkArgs, reply *GetWorkReply) error {
 		reply.File = file
 		// otherwise return nothing in reply
 	} else {
+		c.WorkerPool[args.ID] = WorkerStatus{
+			State: IDLE,
+			File:  "",
+		}
 		reply.File = ""
+	}
+	c.mu.Unlock()
+	return nil
+}
+
+func (c *Coordinator) SignalWorkDone(args *SignalWorkDoneArgs, reply *SignalWorkDoneReply) error {
+	c.mu.Lock()
+	c.WorkerPool[args.ID] = WorkerStatus{
+		State: IDLE,
+		File:  "",
 	}
 	c.mu.Unlock()
 	return nil

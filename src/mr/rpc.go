@@ -23,6 +23,11 @@ type GetWorkReply struct {
 	File string
 }
 
+type SignalWorkDoneArgs struct {
+	ID int
+}
+type SignalWorkDoneReply struct{}
+
 // Cook up a unique-ish UNIX-domain socket name
 // in /var/tmp, for the coordinator.
 // Can't use the current directory since

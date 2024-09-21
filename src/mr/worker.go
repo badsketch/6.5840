@@ -3,8 +3,11 @@ package mr
 import (
 	"fmt"
 	"hash/fnv"
+	"io/ioutil"
 	"log"
 	"net/rpc"
+	"os"
+	"time"
 )
 
 // Map functions return a slice of KeyValue.
@@ -27,8 +30,16 @@ func Worker(mapf func(string, string) []KeyValue,
 
 	// register yourself
 	id := CallRegister()
-	// TODO: if work is empty go and idle
-	CallGetWork(id)
+	file := CallGetWork(id)
+	if len(file) > 0 {
+		results := applyMapToFile(file, mapf)
+		fmt.Println(results)
+		CallSignalWorkDone(id)
+	} else {
+		// TODO: if work is empty go and idle and request later
+		fmt.Println("Did not receive work. Sleeping...")
+		time.Sleep(2 * time.Second)
+	}
 
 }
 
@@ -63,6 +74,19 @@ func CallGetWork(id int) string {
 	}
 }
 
+func CallSignalWorkDone(id int) {
+	args := SignalWorkDoneArgs{
+		ID: id,
+	}
+	reply := SignalWorkDoneReply{}
+	ok := call("Coordinator.SignalWorkDone", &args, &reply)
+	if ok {
+		fmt.Printf("Worker %v signaled that work was completed\n", id)
+	} else {
+		panic("Error when worker signaling work done!")
+	}
+}
+
 // send an RPC request to the coordinator, wait for the response.
 // usually returns true.
 // returns false if something goes wrong.
@@ -82,4 +106,18 @@ func call(rpcname string, args interface{}, reply interface{}) bool {
 
 	fmt.Println(err)
 	return false
+}
+
+func applyMapToFile(filename string, mapf func(string, string) []KeyValue) []KeyValue {
+	file, err := os.Open(filename)
+	if err != nil {
+		log.Fatalf("Cannot open %v", filename)
+	}
+	content, err := ioutil.ReadAll(file)
+	if err != nil {
+		log.Fatalf("cannot read %v", filename)
+	}
+	file.Close()
+	kva := mapf(filename, string(content))
+	return kva
 }
