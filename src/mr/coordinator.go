@@ -1,27 +1,59 @@
 package mr
 
 import (
+	"fmt"
 	"log"
 	"net"
 	"net/http"
 	"net/rpc"
 	"os"
-	"time"
+	"sync"
 )
 
-type Coordinator struct {
-	// Your definitions here.
+type WorkerState int
 
+const (
+	IN_PROGRESS WorkerState = iota
+	IDLE
+)
+
+type WorkerStatus struct {
+	State WorkerState
+	File  string
 }
 
-// Your code here -- RPC handlers for the worker to call.
+type Coordinator struct {
+	FileQueue  []string
+	mu         sync.Mutex
+	WorkerPool map[int]WorkerStatus
+}
 
-// an example RPC handler.
-//
-// the RPC argument and reply types are defined in rpc.go.
-func (c *Coordinator) Example(args *ExampleArgs, reply *ExampleReply) error {
-	reply.Y = args.X + 1
-	reply.Z = 400
+func (c *Coordinator) RegisterWorker(args *RegisterWorkerArgs, reply *RegisterWorkerReply) error {
+	c.mu.Lock()
+	id := len(c.WorkerPool) + 1
+	c.mu.Unlock()
+	reply.ID = id
+	fmt.Printf("A worker has joined. Given ID %v\n", id)
+	return nil
+}
+
+func (c *Coordinator) GetWork(args *GetWorkArgs, reply *GetWorkReply) error {
+	c.mu.Lock()
+	// pop from front of queue if there's tasks
+	if len(c.FileQueue) > 0 {
+		file := c.FileQueue[0]
+		c.FileQueue = c.FileQueue[1:]
+		// update worker states
+		c.WorkerPool[args.ID] = WorkerStatus{
+			State: IN_PROGRESS,
+			File:  file,
+		}
+		reply.File = file
+		// otherwise return nothing in reply
+	} else {
+		reply.File = ""
+	}
+	c.mu.Unlock()
 	return nil
 }
 
@@ -42,8 +74,7 @@ func (c *Coordinator) server() {
 // main/mrcoordinator.go calls Done() periodically to find out
 // if the entire job has finished.
 func (c *Coordinator) Done() bool {
-	time.Sleep(5 * time.Second)
-	ret := true
+	ret := false
 
 	// Your code here.
 
@@ -54,7 +85,10 @@ func (c *Coordinator) Done() bool {
 // main/mrcoordinator.go calls this function.
 // nReduce is the number of reduce tasks to use.
 func MakeCoordinator(files []string, nReduce int) *Coordinator {
-	c := Coordinator{}
+	c := Coordinator{
+		FileQueue:  files,
+		WorkerPool: make(map[int]WorkerStatus),
+	}
 
 	// Your code here.
 

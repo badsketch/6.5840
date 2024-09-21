@@ -25,38 +25,41 @@ func ihash(key string) int {
 func Worker(mapf func(string, string) []KeyValue,
 	reducef func(string, []string) string) {
 
-	// Your worker implementation here.
-
-	// uncomment to send the Example RPC to the coordinator.
-	CallExample()
+	// register yourself
+	id := CallRegister()
+	// TODO: if work is empty go and idle
+	CallGetWork(id)
 
 }
 
-// example function to show how to make an RPC call to the coordinator.
-//
-// the RPC argument and reply types are defined in rpc.go.
-func CallExample() {
-
-	// declare an argument structure.
-	args := ExampleArgs{}
-
-	// fill in the argument(s).
-	args.X = 99
-
-	// declare a reply structure.
-	reply := ExampleReply{}
-
-	// send the RPC request, wait for the reply.
-	// the "Coordinator.Example" tells the
-	// receiving server that we'd like to call
-	// the Example() method of struct Coordinator.
-	ok := call("Coordinator.Example", &args, &reply)
+func CallRegister() int {
+	args := RegisterWorkerArgs{}
+	reply := RegisterWorkerReply{}
+	ok := call("Coordinator.RegisterWorker", &args, &reply)
 	if ok {
-		// reply.Y should be 100.
-		fmt.Printf("reply.Y %v\n", reply.Y)
-		fmt.Printf("reply.Z %v\n", reply.Z)
+		fmt.Printf("Joined as Worker #%v\n", reply.ID)
+		return reply.ID
 	} else {
-		fmt.Printf("call failed!\n")
+		panic("Error when worker attempting to register!")
+	}
+}
+
+func CallGetWork(id int) string {
+	// request work
+	args := GetWorkArgs{
+		ID: id,
+	}
+	reply := GetWorkReply{}
+	ok := call("Coordinator.GetWork", &args, &reply)
+	if ok {
+		if len(reply.File) > 0 {
+			fmt.Printf("Worker %v is now processing %v\n", id, reply.File)
+		} else {
+			fmt.Printf("Worker %v did not receive any work.\n", id)
+		}
+		return reply.File
+	} else {
+		panic("Error when worker attempting to request work!")
 	}
 }
 
