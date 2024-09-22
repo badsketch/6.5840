@@ -34,7 +34,7 @@ func Worker(mapf func(string, string) []KeyValue,
 	reducef func(string, []string) string) {
 
 	log.SetFlags(log.Ltime | log.Lshortfile)
-	// register yourself
+
 	id, numBuckets := CallRegister()
 	for {
 		files, action := CallGetWork(id)
@@ -147,8 +147,6 @@ func partitionKVToBuckets(id int, numBuckets int, kva []KeyValue) {
 	for _, KV := range kva {
 		bucket := ihash(KV.Key) % numBuckets
 		destFile := fmt.Sprintf("mr-%v-%v", id, bucket)
-		// TODO: create this at the beginning of the application
-		// currently manually created
 		fullPath := filepath.Join("./mr-intermediate", destFile)
 		file, err := os.OpenFile(fullPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
 		if err != nil {
@@ -200,8 +198,8 @@ func ProcessReduceTask(filenames []string, reducef func(string, []string) string
 	sort.Sort(ByKey(kva))
 
 	// perform reduce
-	oname := fmt.Sprintf("mr-out-%v", reduceTaskNo)
-	ofile, _ := os.Create(oname)
+	tempfile, _ := os.CreateTemp(".", "mr-tempfile-*")
+	tempfileName := tempfile.Name()
 	i := 0
 	for i < len(kva) {
 		j := i + 1
@@ -213,10 +211,16 @@ func ProcessReduceTask(filenames []string, reducef func(string, []string) string
 			values = append(values, kva[k].Value)
 		}
 		output := reducef(kva[i].Key, values)
-		fmt.Fprintf(ofile, "%v %v\n", kva[i].Key, output)
+		fmt.Fprintf(tempfile, "%v %v\n", kva[i].Key, output)
 
 		i = j
 	}
+	tempfile.Close()
 
-	ofile.Close()
+	oname := fmt.Sprintf("mr-out-%v", reduceTaskNo)
+	err = os.Rename(tempfileName, oname)
+	if err != nil {
+		panic(fmt.Sprintf("Error when atomically renaming temp file %v to final file %v", tempfileName, oname))
+	}
+
 }

@@ -174,50 +174,73 @@ func MakeCoordinator(files []string, nReduce int) *Coordinator {
 	}
 	c.server()
 
-	// Listen for state changes
-	go func() {
-		for {
-			<-c.StateStream
-			if c.State == MAP {
-				log.Println("MAP Phase completed. Moving to REDUCE")
-				c.convertBucketsToReduceTasks()
-				c.mu.Lock()
-				c.State = REDUCE
-				c.mu.Unlock()
-			} else if c.State == REDUCE {
-				log.Println("REDUCE Phase completed. Moving to DONE and cleaning up...")
-				err := os.RemoveAll("./mr-intermediate")
-				if err != nil {
-					panic(fmt.Sprintf("Error during temp file directory cleanup! %v", err))
-				}
-				log.Println("Shutting down.")
-				c.mu.Lock()
-				c.State = DONE
-				c.mu.Unlock()
-			} else {
-				panic("Unexpected state transition!")
-			}
-		}
-	}()
-
-	// Cleanup/Reassign workers that have been in progress for longer than 10 seconds
-	go func() {
-		tickStream := time.NewTicker(time.Second)
-		for {
-			<-tickStream.C
-			c.mu.Lock()
-			for id, worker := range c.WorkerPool {
-				if worker.State == IN_PROGRESS && time.Since(worker.Assigned) >= time.Second*10 {
-					log.Printf("Worker %v has been stuck on %v. Shutting down and adding workload back to queue\n", id, worker.Files)
-					delete(c.WorkerPool, id)
-					c.FileQueue = append(c.FileQueue, worker.Files)
-				}
-			}
-			c.mu.Unlock()
-		}
-	}()
+	go c.watchStateChange()
+	go c.monitorWorkerStatus()
 
 	return &c
+}
+
+// listens to state stream to see if it needs to change from mapping, reduce, or finished
+func (c *Coordinator) watchStateChange() {
+	for {
+		<-c.StateStream
+		if c.State == MAP {
+			log.Println("MAP Phase completed. Moving to REDUCE")
+			c.convertBucketsToReduceTasks()
+			c.mu.Lock()
+			c.State = REDUCE
+			c.mu.Unlock()
+		} else if c.State == REDUCE {
+			log.Println("REDUCE Phase completed. Moving to DONE and cleaning up...")
+			c.cleanUp()
+			c.mu.Lock()
+			c.State = DONE
+			c.mu.Unlock()
+			log.Println("Shutting down.")
+		} else {
+			panic("Unexpected state transition!")
+		}
+	}
+}
+
+// deletes some temporary files like directory where mapped intermediate files are
+// as well as temp files created during reduce phase
+func (c *Coordinator) cleanUp() {
+	err := os.RemoveAll("./mr-intermediate")
+	if err != nil {
+		panic(fmt.Sprintf("Error during temp file directory cleanup! %v", err))
+	}
+
+	files, err := os.ReadDir(".")
+	if err != nil {
+		panic(fmt.Sprintf("Error when trying to read directory during tempfile cleanup! %v", err))
+	}
+	for _, file := range files {
+		if strings.HasPrefix(file.Name(), "mr-tempfile-") {
+			err = os.Remove(file.Name())
+			if err != nil {
+				panic(fmt.Sprintf("Error during cleanup of tempfile %v: %v", file.Name(), err))
+			}
+		}
+	}
+}
+
+// deletes any workers based on arbitrary duration (10 sec.)
+// by assuming they've crashed
+func (c *Coordinator) monitorWorkerStatus() {
+	tickStream := time.NewTicker(time.Second)
+	for {
+		<-tickStream.C
+		c.mu.Lock()
+		for id, worker := range c.WorkerPool {
+			if worker.State == IN_PROGRESS && time.Since(worker.Assigned) >= time.Second*10 {
+				log.Printf("Worker %v has been stuck on %v. Shutting down and adding workload back to queue\n", id, worker.Files)
+				delete(c.WorkerPool, id)
+				c.FileQueue = append(c.FileQueue, worker.Files)
+			}
+		}
+		c.mu.Unlock()
+	}
 }
 
 // lists all files in directory, but there could be a better way
