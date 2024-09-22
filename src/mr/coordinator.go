@@ -36,32 +36,27 @@ type WorkerStatus struct {
 }
 
 type Coordinator struct {
-	FileQueue   [][]string
-	mu          sync.Mutex
-	WorkerPool  map[int]WorkerStatus
-	buckets     int
-	State       CoordinatorPhase
-	StateStream chan struct{}
+	FileQueue    [][]string
+	mu           sync.Mutex
+	WorkerPool   map[int]WorkerStatus
+	buckets      int
+	State        CoordinatorPhase
+	StateStream  chan struct{}
+	NextWorkerID int
 }
 
 func (c *Coordinator) RegisterWorker(args *RegisterWorkerArgs, reply *RegisterWorkerReply) error {
 	c.mu.Lock()
-	// TODO: maybe just make this a variable to be incremented instead of this iteration
-	maxId := 1
-	for id := range c.WorkerPool {
-		if id > maxId {
-			maxId = id
-		}
-	}
-	newID := maxId + 1
-	c.WorkerPool[newID] = WorkerStatus{
+	c.NextWorkerID = c.NextWorkerID + 1
+	id := c.NextWorkerID
+	c.WorkerPool[id] = WorkerStatus{
 		State: IDLE,
 		Files: []string{},
 	}
 	c.mu.Unlock()
-	reply.ID = newID
+	reply.ID = id
 	reply.BucketCount = c.buckets
-	log.Printf("A worker has joined. Given ID %v\n", newID)
+	log.Printf("A worker has joined. Given ID %v\n", id)
 	return nil
 }
 
@@ -170,11 +165,12 @@ func MakeCoordinator(files []string, nReduce int) *Coordinator {
 	log.Printf("Mapping the files: %v\n", filesList)
 
 	c := Coordinator{
-		FileQueue:   filesList,
-		WorkerPool:  make(map[int]WorkerStatus),
-		buckets:     nReduce,
-		State:       MAP,
-		StateStream: make(chan struct{}),
+		FileQueue:    filesList,
+		WorkerPool:   make(map[int]WorkerStatus),
+		NextWorkerID: 0,
+		buckets:      nReduce,
+		State:        MAP,
+		StateStream:  make(chan struct{}),
 	}
 	c.server()
 
