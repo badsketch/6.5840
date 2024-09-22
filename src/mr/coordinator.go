@@ -222,6 +222,13 @@ func (c *Coordinator) convertBucketsToReduceTasks() {
 			partitions[partition] = append(partitions[partition], file.Name())
 		}
 	}
+// sometimes all hashes go to a single partition, resulting in empty lists of files
+	// pop those (ex. [[] [] [mr-1-2, mr-2-2]])
+	i := 0
+	for i < len(partitions) && len(partitions[i]) == 0 {
+		i++
+	}
+	partitions = partitions[i:]
 	c.mu.Lock()
 	c.FileQueue = partitions
 	c.mu.Unlock()
