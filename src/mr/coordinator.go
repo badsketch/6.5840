@@ -12,11 +12,12 @@ import (
 	"sync"
 )
 
-type CoordinatorState int
+type WorkerPhase int
 
 const (
-	MAP CoordinatorState = iota
+	MAP WorkerPhase = iota
 	REDUCE
+	WAIT
 )
 
 type WorkerState int
@@ -36,7 +37,7 @@ type Coordinator struct {
 	mu          sync.Mutex
 	WorkerPool  map[int]WorkerStatus
 	buckets     int
-	State       CoordinatorState
+	State       WorkerPhase
 	StateStream chan struct{}
 }
 
@@ -62,6 +63,7 @@ func (c *Coordinator) GetWork(args *GetWorkArgs, reply *GetWorkReply) error {
 			Files: files,
 		}
 		reply.Files = files
+		reply.Action = c.State
 		// otherwise return nothing in reply
 	} else {
 		c.WorkerPool[args.ID] = WorkerStatus{
@@ -69,6 +71,7 @@ func (c *Coordinator) GetWork(args *GetWorkArgs, reply *GetWorkReply) error {
 			Files: []string{},
 		}
 		reply.Files = []string{}
+		reply.Action = WAIT
 	}
 	c.mu.Unlock()
 	return nil
@@ -156,10 +159,10 @@ func MakeCoordinator(files []string, nReduce int) *Coordinator {
 	// Listen for when we're ready to enter REDUCE phase
 	go func() {
 		<-c.StateStream
-		c.State = REDUCE
 		fmt.Println("MAP Phase completed. Moving to REDUCE")
 		c.convertBucketsToReduceTasks()
 		fmt.Printf("REDUCE queue is now %v\n", c.FileQueue)
+		c.State = REDUCE
 	}()
 
 	return &c

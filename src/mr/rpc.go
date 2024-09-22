@@ -21,7 +21,8 @@ type GetWorkArgs struct {
 	ID int
 }
 type GetWorkReply struct {
-	Files []string
+	Files  []string
+	Action WorkerPhase
 }
 
 type SignalWorkDoneArgs struct {

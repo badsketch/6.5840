@@ -9,6 +9,9 @@ import (
 	"net/rpc"
 	"os"
 	"path/filepath"
+	"sort"
+	"strconv"
+	"strings"
 	"time"
 )
 
@@ -33,9 +36,12 @@ func Worker(mapf func(string, string) []KeyValue,
 	// register yourself
 	id, numBuckets := CallRegister()
 	for {
-		file := CallGetWork(id)
-		if len(file) > 0 {
-			ProcessMapTask(file, id, numBuckets, mapf)
+		files, action := CallGetWork(id)
+		if action == MAP {
+			ProcessMapTask(files, id, numBuckets, mapf)
+			CallSignalWorkDone(id)
+		} else if action == REDUCE {
+			ProcessReduceTask(files, reducef)
 			CallSignalWorkDone(id)
 		} else {
 			fmt.Println("Did not receive work. Sleeping...")
@@ -57,7 +63,7 @@ func CallRegister() (int, int) {
 	}
 }
 
-func CallGetWork(id int) []string {
+func CallGetWork(id int) ([]string, WorkerPhase) {
 	// request work
 	args := GetWorkArgs{
 		ID: id,
@@ -66,11 +72,11 @@ func CallGetWork(id int) []string {
 	ok := call("Coordinator.GetWork", &args, &reply)
 	if ok {
 		if len(reply.Files) > 0 {
-			fmt.Printf("Worker %v is now processing %v\n", id, reply.Files)
+			fmt.Printf("Worker %v is now running %v on %v\n", id, reply.Action, reply.Files)
 		} else {
 			fmt.Printf("Worker %v did not receive any work.\n", id)
 		}
-		return reply.Files
+		return reply.Files, reply.Action
 	} else {
 		panic("Error when worker attempting to request work!")
 	}
@@ -155,4 +161,62 @@ func partitionKVToBuckets(id int, numBuckets int, kva []KeyValue) {
 		}
 		file.Close()
 	}
+}
+
+type ByKey []KeyValue
+
+func (a ByKey) Len() int           { return len(a) }
+func (a ByKey) Swap(i, j int)      { a[i], a[j] = a[j], a[i] }
+func (a ByKey) Less(i, j int) bool { return a[i].Key < a[j].Key }
+
+func ProcessReduceTask(filenames []string, reducef func(string, []string) string) {
+	// TODO: figure out a better way to determine the reduce task name
+	first := filenames[0]
+	parts := strings.Split(first, "-")
+	reduceTaskNo, err := strconv.Atoi(parts[len(parts)-1])
+	if err != nil {
+		panic(fmt.Sprintf("Error when parsing file to get reduce file name: %v", first))
+	}
+	fmt.Println("Doing some reduce stuff!")
+	// decode all of the kv and append to giant map
+	kva := []KeyValue{}
+	for _, filename := range filenames {
+		file, err := os.Open(filepath.Join("mr-intermediate", filename))
+		if err != nil {
+			panic(fmt.Sprintf("Error while attempting to open %v: %v", file, err))
+		}
+		dec := json.NewDecoder(file)
+		for {
+			var kv KeyValue
+			err := dec.Decode(&kv)
+			if err != nil {
+				break
+			}
+			kva = append(kva, kv)
+		}
+	}
+
+	// sort on the map
+	sort.Sort(ByKey(kva))
+
+	// perform reduce
+	oname := fmt.Sprintf("mr-out-%v", reduceTaskNo)
+	ofile, _ := os.Create(oname)
+	i := 0
+	for i < len(kva) {
+		j := i + 1
+		for j < len(kva) && kva[j].Key == kva[i].Key {
+			j++
+		}
+		values := []string{}
+		for k := i; k < j; k++ {
+			values = append(values, kva[k].Value)
+		}
+		output := reducef(kva[i].Key, values)
+		fmt.Fprintf(ofile, "%v %v\n", kva[i].Key, output)
+
+		i = j
+	}
+
+	ofile.Close()
 }
