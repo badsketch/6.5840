@@ -22,7 +22,7 @@ type GetWorkArgs struct {
 }
 type GetWorkReply struct {
 	Files  []string
-	Action WorkerPhase
+	Action CoordinatorPhase
 }
 
 type SignalWorkDoneArgs struct {

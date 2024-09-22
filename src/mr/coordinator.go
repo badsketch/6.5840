@@ -12,12 +12,13 @@ import (
 	"sync"
 )
 
-type WorkerPhase int
+type CoordinatorPhase int
 
 const (
-	MAP WorkerPhase = iota
+	MAP CoordinatorPhase = iota
 	REDUCE
 	WAIT
+	DONE
 )
 
 type WorkerState int
@@ -37,7 +38,7 @@ type Coordinator struct {
 	mu          sync.Mutex
 	WorkerPool  map[int]WorkerStatus
 	buckets     int
-	State       WorkerPhase
+	State       CoordinatorPhase
 	StateStream chan struct{}
 }
 
@@ -83,7 +84,7 @@ func (c *Coordinator) SignalWorkDone(args *SignalWorkDoneArgs, reply *SignalWork
 		State: IDLE,
 		Files: []string{},
 	}
-	if c.IsMappingDone() {
+	if c.IsCurrentPhaseDone() {
 		c.StateStream <- struct{}{}
 	}
 	c.mu.Unlock()
@@ -91,7 +92,7 @@ func (c *Coordinator) SignalWorkDone(args *SignalWorkDoneArgs, reply *SignalWork
 }
 
 // dangerous. mutex should be handled in caller
-func (c *Coordinator) IsMappingDone() bool {
+func (c *Coordinator) IsCurrentPhaseDone() bool {
 	return c.IsTaskQEmpty() && c.IsAllWorkersIdle()
 }
 
@@ -128,11 +129,7 @@ func (c *Coordinator) server() {
 // main/mrcoordinator.go calls Done() periodically to find out
 // if the entire job has finished.
 func (c *Coordinator) Done() bool {
-	ret := false
-
-	// Your code here.
-
-	return ret
+	return c.State == DONE
 }
 
 // create a Coordinator.
@@ -158,11 +155,21 @@ func MakeCoordinator(files []string, nReduce int) *Coordinator {
 
 	// Listen for when we're ready to enter REDUCE phase
 	go func() {
-		<-c.StateStream
-		fmt.Println("MAP Phase completed. Moving to REDUCE")
-		c.convertBucketsToReduceTasks()
-		fmt.Printf("REDUCE queue is now %v\n", c.FileQueue)
-		c.State = REDUCE
+		for {
+			<-c.StateStream
+			fmt.Println("asdfasdfasdf")
+			if c.State == MAP {
+				fmt.Println("MAP Phase completed. Moving to REDUCE")
+				c.convertBucketsToReduceTasks()
+				fmt.Printf("REDUCE queue is now %v\n", c.FileQueue)
+				c.State = REDUCE
+			} else if c.State == REDUCE {
+				fmt.Println("REDUCE Phase completed. Moving to DONE and shutting down...")
+				c.State = DONE
+			} else {
+				fmt.Println("what happened")
+			}
+		}
 	}()
 
 	return &c

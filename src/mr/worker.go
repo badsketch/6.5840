@@ -63,7 +63,7 @@ func CallRegister() (int, int) {
 	}
 }
 
-func CallGetWork(id int) ([]string, WorkerPhase) {
+func CallGetWork(id int) ([]string, CoordinatorPhase) {
 	// request work
 	args := GetWorkArgs{
 		ID: id,
@@ -177,7 +177,6 @@ func ProcessReduceTask(filenames []string, reducef func(string, []string) string
 	if err != nil {
 		panic(fmt.Sprintf("Error when parsing file to get reduce file name: %v", first))
 	}
-	fmt.Println("Doing some reduce stuff!")
 	// decode all of the kv and append to giant map
 	kva := []KeyValue{}
 	for _, filename := range filenames {
