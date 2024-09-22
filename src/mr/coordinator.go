@@ -225,14 +225,15 @@ func (c *Coordinator) convertBucketsToReduceTasks() {
 		}
 	}
 	// sometimes all hashes go to a single partition, resulting in empty lists of files
-	// pop those (ex. [[] [] [mr-1-2, mr-2-2]])
-	i := 0
-	for i < len(partitions) && len(partitions[i]) == 0 {
-		i++
+	// remove those (ex. [[] [mr-1-2, mr-2-2] []])
+	filteredPartitions := [][]string{}
+	for _, partition := range partitions {
+		if len(partition) > 0 {
+			filteredPartitions = append(filteredPartitions, partition)
+		}
 	}
-	partitions = partitions[i:]
 	c.mu.Lock()
-	c.FileQueue = partitions
+	c.FileQueue = filteredPartitions
 	log.Printf("REDUCE queue is now %v\n", c.FileQueue)
 	c.mu.Unlock()
 }
