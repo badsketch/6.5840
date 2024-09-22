@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 )
 
 type CoordinatorPhase int
@@ -29,8 +30,9 @@ const (
 )
 
 type WorkerStatus struct {
-	State WorkerState
-	Files []string
+	State    WorkerState
+	Files    []string
+	Assigned time.Time
 }
 
 type Coordinator struct {
@@ -64,8 +66,9 @@ func (c *Coordinator) GetWork(args *GetWorkArgs, reply *GetWorkReply) error {
 		c.FileQueue = c.FileQueue[1:]
 		// update worker states
 		c.WorkerPool[args.ID] = WorkerStatus{
-			State: IN_PROGRESS,
-			Files: files,
+			State:    IN_PROGRESS,
+			Files:    files,
+			Assigned: time.Now(),
 		}
 		reply.Files = files
 		reply.Action = c.State
@@ -168,7 +171,7 @@ func MakeCoordinator(files []string, nReduce int) *Coordinator {
 	}
 	c.server()
 
-	// Listen for when we're ready to enter REDUCE phase
+	// Listen for state changes
 	go func() {
 		for {
 			<-c.StateStream
@@ -191,6 +194,23 @@ func MakeCoordinator(files []string, nReduce int) *Coordinator {
 			} else {
 				panic("Unexpected state transition!")
 			}
+		}
+	}()
+
+	// Cleanup/Reassign workers that have been in progress for longer than 10 seconds
+	go func() {
+		tickStream := time.NewTicker(time.Second)
+		for {
+			<-tickStream.C
+			c.mu.Lock()
+			for id, worker := range c.WorkerPool {
+				if worker.State == IN_PROGRESS && time.Since(worker.Assigned) >= time.Second*10 {
+					log.Printf("Worker %v has been stuck on %v. Shutting down and adding workload back to queue\n", id, worker.Files)
+					delete(c.WorkerPool, id)
+					c.FileQueue = append(c.FileQueue, worker.Files)
+				}
+			}
+			c.mu.Unlock()
 		}
 	}()
 
