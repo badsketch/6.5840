@@ -141,12 +141,20 @@ func (c *Coordinator) Done() bool {
 // nReduce is the number of reduce tasks to use.
 func MakeCoordinator(files []string, nReduce int) *Coordinator {
 
+	// set up directory for intermediate files
+	err := os.Mkdir("./mr-intermediate", 0755)
+	if err != nil {
+		panic(fmt.Sprintf("Error when creating temp file directory! %v", err))
+	}
+
 	// awkward, but this allows map and reduce to use the same WorkerStatus
 	// field for files. Though map is simple a list of a single file
 	filesList := [][]string{}
 	for _, f := range files {
 		filesList = append(filesList, []string{f})
 	}
+
+	fmt.Printf("Mapping the files: %v\n", filesList)
 
 	c := Coordinator{
 		FileQueue:   filesList,
@@ -161,17 +169,25 @@ func MakeCoordinator(files []string, nReduce int) *Coordinator {
 	go func() {
 		for {
 			<-c.StateStream
-			fmt.Println("asdfasdfasdf")
 			if c.State == MAP {
 				fmt.Println("MAP Phase completed. Moving to REDUCE")
 				c.convertBucketsToReduceTasks()
 				fmt.Printf("REDUCE queue is now %v\n", c.FileQueue)
+				c.mu.Lock()
 				c.State = REDUCE
+				c.mu.Unlock()
 			} else if c.State == REDUCE {
-				fmt.Println("REDUCE Phase completed. Moving to DONE and shutting down...")
+				fmt.Println("REDUCE Phase completed. Moving to DONE and cleaning up...")
+				err := os.RemoveAll("./mr-intermediate")
+				if err != nil {
+					panic(fmt.Sprintf("Error during temp file directory cleanup! %v", err))
+				}
+				fmt.Println("Shutting down.")
+				c.mu.Lock()
 				c.State = DONE
+				c.mu.Unlock()
 			} else {
-				fmt.Println("what happened")
+				panic("Unexpected state transition!")
 			}
 		}
 	}()

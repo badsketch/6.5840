@@ -126,11 +126,11 @@ func applyMapToFiles(filenames []string, mapf func(string, string) []KeyValue) [
 	for _, filename := range filenames {
 		file, err := os.Open(filename)
 		if err != nil {
-			log.Fatalf("Cannot open %v", filename)
+			log.Fatalf("Cannot open %v: %v", filename, err)
 		}
 		content, err := ioutil.ReadAll(file)
 		if err != nil {
-			log.Fatalf("cannot read %v", filename)
+			log.Fatalf("cannot read %v: %v", filename, err)
 		}
 		file.Close()
 		kva = append(kva, mapf(filename, string(content))...)
@@ -148,7 +148,7 @@ func partitionKVToBuckets(id int, numBuckets int, kva []KeyValue) {
 		destFile := fmt.Sprintf("mr-%v-%v", id, bucket)
 		// TODO: create this at the beginning of the application
 		// currently manually created
-		fullPath := filepath.Join("mr-intermediate", destFile)
+		fullPath := filepath.Join("./mr-intermediate", destFile)
 		file, err := os.OpenFile(fullPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
 		if err != nil {
 			panic(fmt.Sprintf("Error when trying to create intermediate files:%v", err))
