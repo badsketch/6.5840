@@ -45,6 +45,10 @@ type Coordinator struct {
 func (c *Coordinator) RegisterWorker(args *RegisterWorkerArgs, reply *RegisterWorkerReply) error {
 	c.mu.Lock()
 	id := len(c.WorkerPool) + 1
+	c.WorkerPool[id] = WorkerStatus{
+		State: IDLE,
+		Files: []string{},
+	}
 	c.mu.Unlock()
 	reply.ID = id
 	reply.BucketCount = c.buckets
