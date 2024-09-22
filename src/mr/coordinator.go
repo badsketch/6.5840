@@ -52,7 +52,7 @@ func (c *Coordinator) RegisterWorker(args *RegisterWorkerArgs, reply *RegisterWo
 	c.mu.Unlock()
 	reply.ID = id
 	reply.BucketCount = c.buckets
-	fmt.Printf("A worker has joined. Given ID %v\n", id)
+	log.Printf("A worker has joined. Given ID %v\n", id)
 	return nil
 }
 
@@ -88,6 +88,7 @@ func (c *Coordinator) SignalWorkDone(args *SignalWorkDoneArgs, reply *SignalWork
 		State: IDLE,
 		Files: []string{},
 	}
+	log.Println(c.WorkerPool)
 	if c.IsCurrentPhaseDone() {
 		c.StateStream <- struct{}{}
 	}
@@ -141,6 +142,8 @@ func (c *Coordinator) Done() bool {
 // nReduce is the number of reduce tasks to use.
 func MakeCoordinator(files []string, nReduce int) *Coordinator {
 
+	log.SetFlags(log.Ltime | log.Lshortfile)
+
 	// set up directory for intermediate files
 	err := os.Mkdir("./mr-intermediate", 0755)
 	if err != nil {
@@ -154,7 +157,7 @@ func MakeCoordinator(files []string, nReduce int) *Coordinator {
 		filesList = append(filesList, []string{f})
 	}
 
-	fmt.Printf("Mapping the files: %v\n", filesList)
+	log.Printf("Mapping the files: %v\n", filesList)
 
 	c := Coordinator{
 		FileQueue:   filesList,
@@ -170,19 +173,18 @@ func MakeCoordinator(files []string, nReduce int) *Coordinator {
 		for {
 			<-c.StateStream
 			if c.State == MAP {
-				fmt.Println("MAP Phase completed. Moving to REDUCE")
+				log.Println("MAP Phase completed. Moving to REDUCE")
 				c.convertBucketsToReduceTasks()
-				fmt.Printf("REDUCE queue is now %v\n", c.FileQueue)
 				c.mu.Lock()
 				c.State = REDUCE
 				c.mu.Unlock()
 			} else if c.State == REDUCE {
-				fmt.Println("REDUCE Phase completed. Moving to DONE and cleaning up...")
+				log.Println("REDUCE Phase completed. Moving to DONE and cleaning up...")
 				err := os.RemoveAll("./mr-intermediate")
 				if err != nil {
 					panic(fmt.Sprintf("Error during temp file directory cleanup! %v", err))
 				}
-				fmt.Println("Shutting down.")
+				log.Println("Shutting down.")
 				c.mu.Lock()
 				c.State = DONE
 				c.mu.Unlock()
@@ -222,7 +224,7 @@ func (c *Coordinator) convertBucketsToReduceTasks() {
 			partitions[partition] = append(partitions[partition], file.Name())
 		}
 	}
-// sometimes all hashes go to a single partition, resulting in empty lists of files
+	// sometimes all hashes go to a single partition, resulting in empty lists of files
 	// pop those (ex. [[] [] [mr-1-2, mr-2-2]])
 	i := 0
 	for i < len(partitions) && len(partitions[i]) == 0 {
@@ -231,5 +233,6 @@ func (c *Coordinator) convertBucketsToReduceTasks() {
 	partitions = partitions[i:]
 	c.mu.Lock()
 	c.FileQueue = partitions
+	log.Printf("REDUCE queue is now %v\n", c.FileQueue)
 	c.mu.Unlock()
 }

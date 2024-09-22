@@ -33,6 +33,7 @@ func ihash(key string) int {
 func Worker(mapf func(string, string) []KeyValue,
 	reducef func(string, []string) string) {
 
+	log.SetFlags(log.Ltime | log.Lshortfile)
 	// register yourself
 	id, numBuckets := CallRegister()
 	for {
@@ -44,7 +45,7 @@ func Worker(mapf func(string, string) []KeyValue,
 			ProcessReduceTask(files, reducef)
 			CallSignalWorkDone(id)
 		} else {
-			fmt.Println("Did not receive work. Sleeping...")
+			log.Printf("Worker %v not receive work. Sleeping...\n", id)
 			time.Sleep(4 * time.Second)
 		}
 	}
@@ -56,7 +57,7 @@ func CallRegister() (int, int) {
 	reply := RegisterWorkerReply{}
 	ok := call("Coordinator.RegisterWorker", &args, &reply)
 	if ok {
-		fmt.Printf("Joined as Worker #%v\n", reply.ID)
+		log.Printf("Joined as Worker #%v\n", reply.ID)
 		return reply.ID, reply.BucketCount
 	} else {
 		panic("Error when worker attempting to register!")
@@ -72,9 +73,9 @@ func CallGetWork(id int) ([]string, CoordinatorPhase) {
 	ok := call("Coordinator.GetWork", &args, &reply)
 	if ok {
 		if len(reply.Files) > 0 {
-			fmt.Printf("Worker %v is now running %v on %v\n", id, reply.Action, reply.Files)
+			log.Printf("Worker %v is now running %v on %v\n", id, reply.Action, reply.Files)
 		} else {
-			fmt.Printf("Worker %v did not receive any work.\n", id)
+			log.Printf("Worker %v did not receive any work.\n", id)
 		}
 		return reply.Files, reply.Action
 	} else {
@@ -89,7 +90,7 @@ func CallSignalWorkDone(id int) {
 	reply := SignalWorkDoneReply{}
 	ok := call("Coordinator.SignalWorkDone", &args, &reply)
 	if ok {
-		fmt.Printf("Worker %v signaled that work was completed\n", id)
+		log.Printf("Worker %v signaled that work was completed\n", id)
 	} else {
 		panic("Error when worker signaling work done!")
 	}
@@ -112,7 +113,7 @@ func call(rpcname string, args interface{}, reply interface{}) bool {
 		return true
 	}
 
-	fmt.Println(err)
+	log.Println(err)
 	return false
 }
 
