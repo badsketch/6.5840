@@ -46,15 +46,22 @@ type Coordinator struct {
 
 func (c *Coordinator) RegisterWorker(args *RegisterWorkerArgs, reply *RegisterWorkerReply) error {
 	c.mu.Lock()
-	id := len(c.WorkerPool) + 1
-	c.WorkerPool[id] = WorkerStatus{
+	// TODO: maybe just make this a variable to be incremented instead of this iteration
+	maxId := 1
+	for id := range c.WorkerPool {
+		if id > maxId {
+			maxId = id
+		}
+	}
+	newID := maxId + 1
+	c.WorkerPool[newID] = WorkerStatus{
 		State: IDLE,
 		Files: []string{},
 	}
 	c.mu.Unlock()
-	reply.ID = id
+	reply.ID = newID
 	reply.BucketCount = c.buckets
-	log.Printf("A worker has joined. Given ID %v\n", id)
+	log.Printf("A worker has joined. Given ID %v\n", newID)
 	return nil
 }
 
